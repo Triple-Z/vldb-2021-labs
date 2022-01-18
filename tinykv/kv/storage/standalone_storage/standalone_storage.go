@@ -32,15 +32,34 @@ func (s *StandAloneStorage) Stop() error {
 
 func (s *StandAloneStorage) Reader(ctx *kvrpcpb.Context) (storage.StorageReader, error) {
 	// YOUR CODE HERE (lab1).
-	panic("not implemented yet")
-	return nil, nil
+	badgerReader := NewBadgerReader(s.db.NewTransaction(false))
+	return badgerReader, nil
 }
 
 func (s *StandAloneStorage) Write(ctx *kvrpcpb.Context, batch []storage.Modify) error {
 	// YOUR CODE HERE (lab1).
 	// Try to check the definition of `storage.Modify` and txn interface of `badger`.
 	// As the column family is not supported by `badger`, a wrapper is used to simulate it.
-	panic("not implemented yet")
+	txn := s.db.NewTransaction(true)
+	var err error
+	for _, m := range batch {
+		// create badger txn operations
+		switch m.Data.(type) {
+		case storage.Put:
+			err = txn.Set(engine_util.KeyWithCF(m.Cf(), m.Key()), m.Value())
+		case storage.Delete:
+			err = txn.Delete(engine_util.KeyWithCF(m.Cf(), m.Key()))
+		}
+		// handle txn too big, ref: https://dgraph.io/docs/badger/get-started/#read-write-transactions
+		if err == badger.ErrTxnTooBig {
+			_ = txn.Commit()
+			txn = s.db.NewTransaction(true)
+			_ = txn.Commit()
+		} else if err != nil {
+			return err
+		}
+		_ = txn.Commit()
+	}
 	return nil
 }
 
